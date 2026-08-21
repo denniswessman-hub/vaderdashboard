@@ -2,25 +2,45 @@
 <html lang="sv">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Väderdashboard – troligaste prognos</title>
 <meta name="description" content="SMHI, Yr och en tredje modell på samma sida, med en sammanvägd troligaste prognos.">
 <meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f4f3f0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121211" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Väder">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="styles.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌤️</text></svg>">
+<link rel="icon" href="icon-192.png" sizes="192x192">
 </head>
 <body>
 <div class="wrap">
 
-  <div class="topbar">
+  <header class="topbar">
     <div class="brand">Väderdashboard <span>· troligaste prognos</span></div>
+
+    <div class="tools">
+      <button class="btn" id="geo" title="Använd min position">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="6" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/></svg>
+        <span class="lbl">Min position</span>
+      </button>
+      <button class="btn icon" id="refresh" title="Uppdatera prognosen" aria-label="Uppdatera prognosen">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9M20 4v4h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="btn icon" id="theme" title="Växla ljust/mörkt" aria-label="Växla tema">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3a9 9 0 0 0 0 18Z" fill="currentColor"/></svg>
+      </button>
+    </div>
+
     <div class="search">
-      <input id="q" type="search" placeholder="Sök kommun eller ort…" autocomplete="off" aria-label="Sök plats">
+      <input id="q" type="search" placeholder="Sök kommun eller ort…" autocomplete="off" aria-label="Sök plats" enterkeyhint="search">
       <div class="results" id="results" role="listbox"></div>
     </div>
-    <button class="btn" id="geo" title="Använd min position">Min position</button>
-    <button class="btn icon" id="theme" title="Växla ljust/mörkt" aria-label="Växla tema">◐</button>
-  </div>
+  </header>
 
   <div class="favs" id="favs"></div>
 
@@ -51,6 +71,7 @@
     <h2>Kommande 48 timmar</h2>
     <p class="sub">Tunna linjer är källorna var för sig. Den tjocka linjen är den sammanvägda prognosen, det skuggade fältet visar spridningen mellan högsta och lägsta källa.</p>
     <div class="legend" id="legend"></div>
+    <p class="swipe-hint">Svep i sidled för att se hela dygnet</p>
     <div class="chart-scroll" id="chartScroll">
       <svg class="chart" id="chart48" viewBox="0 0 960 300" role="img" aria-label="Temperatur och nederbörd kommande 48 timmar"></svg>
     </div>

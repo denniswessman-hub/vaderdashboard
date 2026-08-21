@@ -204,14 +204,16 @@ const Sources = (() => {
 
   const KEY = (id, lat, lon) => `vd.cache.${id}.${lat.toFixed(3)},${lon.toFixed(3)}`;
 
-  async function loadAll(lat, lon) {
+  // force = hoppa över cachen, används av uppdateringsknappen
+  async function loadAll(lat, lon, { force = false } = {}) {
+    const run = (key, fn) => (force ? fn().then((v) => { cacheSet(key, v); return v; }) : cached(key, fn));
     const jobs = [
       ['smhi', smhi],
       ['yr', yr],
       ['ecmwf', ecmwf],
     ];
     const settled = await Promise.allSettled(
-      jobs.map(([id, fn]) => cached(KEY(id, lat, lon), () => fn(lat, lon)))
+      jobs.map(([id, fn]) => run(KEY(id, lat, lon), () => fn(lat, lon)))
     );
 
     const sources = [];

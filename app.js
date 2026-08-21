@@ -19,7 +19,7 @@ const SYMBOL_TEXT = {
   sleet: 'Snöblandat regn', snow: 'Snö', heavysnow: 'Kraftigt snöfall', thunder: 'Åska',
 };
 
-const state = { loc: null, favs: [], data: null, grid: null, days: null };
+const state = { loc: null, favs: [], data: null, grid: null, days: null, fetched: 0 };
 
 /* ------------------------------------------------------------------ *
  * Lagring
@@ -304,7 +304,7 @@ function renderNow() {
   const c = row.c;
   $('nowGlyph').innerHTML = glyph(c.symbol, isDay(row.date));
   $('nowTemp').textContent = fmtTemp(c.temp);
-  $('nowDesc').innerHTML = `${SYMBOL_TEXT[c.symbol] || 'Prognos'}<small>${c.n} av ${state.data.sources.length} källor · spridning ${fmtNum(c.spread)} °C</small>`;
+  $('nowDesc').innerHTML = `${SYMBOL_TEXT[c.symbol] || 'Prognos'}<small>${c.n} av ${state.data.sources.length} källor · spridning ${fmtNum(c.spread)}\u00a0°C</small>`;
 
   const m = [
     ['Nederbörd', `${fmtNum(c.rate, 1)} mm/h`],
@@ -428,9 +428,9 @@ function renderChart() {
     parts.push(`<text x="${x(i).toFixed(1)}" y="${CHART.h - 6}" text-anchor="middle">${hour === 0 ? dayFmt.format(row.date) : `${String(hour).padStart(2, '0')}`}</text>`);
   });
 
-  parts.push('<g id="cross" style="display:none"><line class="hover-line" y1="' + tTop + '" y2="' + pBot + '"/></g>');
+  parts.push(`<g id="cross" style="display:none"><line class="hover-line" y1="${tTop}" y2="${pBot}"/><circle class="hover-dot" r="4"/></g>`);
   svg.innerHTML = parts.join('');
-  attachHover(svg, rows, x);
+  attachHover(svg, rows, x, y);
   renderHourTable(rows);
 }
 
@@ -444,12 +444,17 @@ function niceTicks(lo, hi, count) {
   return out;
 }
 
-function attachHover(svg, rows, x) {
+function attachHover(svg, rows, x, y) {
   const tip = $('tip');
   const cross = svg.querySelector('#cross');
   const line = cross.querySelector('line');
+  const dot = cross.querySelector('circle');
+  let hideTimer;
+
+  const hide = () => { tip.classList.remove('on'); cross.style.display = 'none'; };
 
   const move = (ev) => {
+    clearTimeout(hideTimer);
     const box = svg.getBoundingClientRect();
     const px = ((ev.clientX - box.left) / box.width) * CHART.w;
     let idx = Math.round(((px - CHART.l) / (CHART.w - CHART.l - CHART.r)) * (rows.length - 1));
@@ -458,6 +463,8 @@ function attachHover(svg, rows, x) {
     cross.style.display = '';
     line.setAttribute('x1', x(idx));
     line.setAttribute('x2', x(idx));
+    dot.setAttribute('cx', x(idx));
+    dot.setAttribute('cy', y(row.c.temp));
 
     const srcRows = activeSources().map((s) => {
       const v = row.per[s.id];
@@ -474,12 +481,19 @@ function attachHover(svg, rows, x) {
       </dl>`;
     tip.classList.add('on');
     const tw = tip.offsetWidth;
-    tip.style.left = `${Math.min(Math.max(ev.clientX + 14, 8), window.innerWidth - tw - 8) + window.scrollX}px`;
-    tip.style.top = `${ev.clientY + window.scrollY - 10}px`;
+    const th = tip.offsetHeight;
+    const touch = ev.pointerType && ev.pointerType !== 'mouse';
+    // Vid pekskärm hamnar rutan ovanför fingret så att den inte skyms.
+    const top = touch ? ev.clientY - th - 22 : ev.clientY - 10;
+    tip.style.left = `${Math.min(Math.max(ev.clientX - (touch ? tw / 2 : -14), 8), window.innerWidth - tw - 8) + window.scrollX}px`;
+    tip.style.top = `${Math.max(top, 8) + window.scrollY}px`;
+    if (touch) hideTimer = setTimeout(hide, 4000);
   };
 
-  svg.addEventListener('mousemove', move);
-  svg.addEventListener('mouseleave', () => { tip.classList.remove('on'); cross.style.display = 'none'; });
+  svg.addEventListener('pointermove', (ev) => { if (ev.pointerType === 'mouse') move(ev); });
+  svg.addEventListener('pointerdown', move);
+  svg.addEventListener('pointerleave', (ev) => { if (ev.pointerType === 'mouse') hide(); });
+  svg.addEventListener('pointercancel', hide);
 }
 
 function renderHourTable(rows) {
@@ -504,11 +518,12 @@ function renderDays() {
   const hi = Math.max(...days.map((d) => d.max));
   const span = Math.max(hi - lo, 1);
 
+  const openFirst = window.matchMedia('(min-width: 780px)').matches;
   $('days').innerHTML = days.map((d, i) => {
     const left = ((d.min - lo) / span) * 100;
     const width = Math.max(((d.max - d.min) / span) * 100, 3);
     const pct = Math.round(d.agreement * 100);
-    return `<details class="day"${i === 0 ? ' open' : ''}>
+    return `<details class="day"${i === 0 && openFirst ? ' open' : ''}>
       <summary>
         <span class="dname">${i === 0 ? 'Idag' : dayFmt.format(d.date)}<small>${dateFmt.format(d.date)}</small></span>
         <svg viewBox="0 0 64 64" width="30" height="30" aria-label="${SYMBOL_TEXT[d.symbol] || ''}">${glyph(d.symbol, true)}</svg>
@@ -524,13 +539,13 @@ function renderDays() {
             if (!p) return `<tr><td>${sourceLabel(s)}</td><td colspan="5">saknar data</td></tr>`;
             return `<tr>
               <td><span class="swatch" style="display:inline-block;background:${sourceColor(s.id)};margin-right:6px"></span>${sourceLabel(s)}</td>
-              <td>${fmtTemp(p.min)}</td><td>${fmtTemp(p.max)}</td>
-              <td>${fmtNum(p.precip, 1)} mm</td><td>${fmtNum(p.wind, 1)} m/s</td>
-              <td>${SYMBOL_TEXT[p.symbol] || '–'}</td></tr>`;
+              <td data-label="Lägst">${fmtTemp(p.min)}</td><td data-label="Högst">${fmtTemp(p.max)}</td>
+              <td data-label="Nederbörd">${fmtNum(p.precip, 1)} mm</td><td data-label="Max vind">${fmtNum(p.wind, 1)} m/s</td>
+              <td data-label="Väder">${SYMBOL_TEXT[p.symbol] || '–'}</td></tr>`;
           }).join('')}
-          <tr><td><b>Troligaste</b></td><td><b>${fmtTemp(d.min)}</b></td><td><b>${fmtTemp(d.max)}</b></td>
-            <td><b>${fmtNum(d.precip, 1)} mm</b></td><td><b>${fmtNum(d.wind, 1)} m/s</b></td>
-            <td><b>${SYMBOL_TEXT[d.symbol] || '–'}</b></td></tr>
+          <tr><td><b>Troligaste</b></td><td data-label="Lägst"><b>${fmtTemp(d.min)}</b></td><td data-label="Högst"><b>${fmtTemp(d.max)}</b></td>
+            <td data-label="Nederbörd"><b>${fmtNum(d.precip, 1)} mm</b></td><td data-label="Max vind"><b>${fmtNum(d.wind, 1)} m/s</b></td>
+            <td data-label="Väder"><b>${SYMBOL_TEXT[d.symbol] || '–'}</b></td></tr>
           </tbody>
         </table>
       </div>
@@ -560,12 +575,15 @@ async function setLocation(loc, { remember = true } = {}) {
   await refresh();
 }
 
-async function refresh() {
+async function refresh({ force = false } = {}) {
   const loc = state.loc;
-  $('meta').textContent = 'Hämtar prognoser…';
+  const btn = $('refresh');
+  btn.setAttribute('aria-busy', 'true');
+  $('meta').textContent = force ? 'Hämtar färska prognoser…' : 'Hämtar prognoser…';
   try {
-    const data = await Sources.loadAll(loc.lat, loc.lon);
+    const data = await Sources.loadAll(loc.lat, loc.lon, { force });
     state.data = data;
+    state.fetched = Date.now();
     state.grid = buildGrid(data);
     state.days = buildDays(state.grid, data);
     renderSources();
@@ -575,6 +593,8 @@ async function refresh() {
     $('meta').textContent = `Uppdaterad ${timeFmt.format(new Date(data.generated))} · ${data.sources.length} källor · sammanvägning med lika vikt`;
   } catch (err) {
     $('meta').innerHTML = `<span class="err">Kunde inte hämta prognos: ${err.message}</span>`;
+  } finally {
+    btn.removeAttribute('aria-busy');
   }
 }
 
@@ -665,8 +685,28 @@ async function boot() {
   initSearch();
   initFavs();
   $('geo').addEventListener('click', useGeolocation);
-  window.addEventListener('resize', () => { if (state.grid) renderChart(); });
-  setInterval(() => { if (state.loc) refresh(); }, 10 * 60 * 1000);
+  $('refresh').addEventListener('click', () => { if (state.loc) refresh({ force: true }); });
+
+  let resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (state.grid) renderChart(); }, 150);
+  });
+
+  // Skugga under topplisten så fort sidan rullas
+  const bar = document.querySelector('.topbar');
+  const onScroll = () => bar.classList.toggle('scrolled', window.scrollY > 4);
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  // Mobiler fryser sidan i bakgrunden. När den plockas fram igen hämtas
+  // färska siffror om de i rutan hunnit bli gamla.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !state.loc) return;
+    if (Date.now() - (state.fetched || 0) > 15 * 60 * 1000) refresh({ force: true });
+  });
+
+  setInterval(() => { if (state.loc && document.visibilityState === 'visible') refresh(); }, 10 * 60 * 1000);
 
   const saved = load(STORE.loc, null);
   await setLocation(saved || { name: 'Stockholm', kommun: 'Stockholms kommun', lan: 'Stockholms län', lat: 59.3293, lon: 18.0686 }, { remember: !saved });

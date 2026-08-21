@@ -115,12 +115,45 @@ await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
 await page.waitForTimeout(250);
 await page.screenshot({ path: 'shot-dark.png', fullPage: true });
 
-const m = await ctx.newPage();
-await m.goto(base, { waitUntil: 'networkidle' });
-await m.setViewportSize({ width: 390, height: 1500 });
-await m.waitForTimeout(700);
-console.log('mobil overflow:', await m.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1));
-await m.screenshot({ path: 'shot-mobile.png', fullPage: true });
+// Uppdateringsknappen ska hämta om och sätta ny tidsstämpel
+await page.click('#refresh');
+await page.waitForTimeout(1200);
+console.log('efter uppdatering:', await page.evaluate(() => document.getElementById('meta').textContent));
+
+const devices = [
+  ['iphone-15', 390, 844, 3],
+  ['iphone-se', 375, 667, 2],
+  ['galaxy-s24', 384, 832, 3],
+  ['galaxy-fold-yttre', 344, 882, 3],
+];
+for (const [name, w, h, dpr] of devices) {
+  const d = await browser.newContext({
+    viewport: { width: w, height: h }, deviceScaleFactor: dpr,
+    isMobile: true, hasTouch: true,
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+  });
+  await d.route('**opendata-download-metfcst.smhi.se/**', (r) => r.fulfill(json(smhiBody())));
+  await d.route('**api.met.no/**', (r) => r.fulfill(json(yrBody())));
+  await d.route('**api.open-meteo.com/**', (r) => r.fulfill(json(ecmwfBody())));
+  const mp = await d.newPage();
+  mp.on('pageerror', (e) => problems.push(`${name} pageerror: ${e.message}`));
+  await mp.goto(base, { waitUntil: 'networkidle' });
+  await mp.waitForTimeout(900);
+  const info = await mp.evaluate(() => {
+    const small = [...document.querySelectorAll('button, summary, .chip')]
+      .filter((e) => e.offsetParent !== null && e.getBoundingClientRect().height < 38)
+      .map((e) => `${e.id || e.className || e.tagName}:${Math.round(e.getBoundingClientRect().height)}`);
+    return {
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+      fontSizeSearch: getComputedStyle(document.getElementById('q')).fontSize,
+      smallTargets: [...new Set(small)].slice(0, 6),
+      hero: document.getElementById('nowTemp').textContent,
+    };
+  });
+  console.log(name, JSON.stringify(info));
+  await mp.screenshot({ path: `shot-${name}.png`, fullPage: true });
+  await d.close();
+}
 
 console.log(problems.length ? `FEL:\n${problems.join('\n')}` : 'Inga konsolfel.');
 await browser.close();

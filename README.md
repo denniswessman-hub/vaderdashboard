@@ -13,6 +13,7 @@ behöver ingen server. Det gör att den kan ligga på GitHub Pages.
 | `index.html`, `styles.css` | Sidan och dess utseende |
 | `sources.js` | Hämtar och normaliserar SMHI, Yr och ECMWF |
 | `app.js` | Sammanvägning, diagram och rendering |
+| `manifest.json`, `icon-*.png` | Gör att sidan kan läggas till på hemskärmen som en app |
 | `serve.mjs` | Liten statisk server för lokal körning (Node 18+) |
 | `test-ui.mjs` | Renderingstest i headless Chromium mot stubbade API-svar |
 | `PUBLICERA.md` | Steg för steg: publicera på GitHub Pages |
@@ -25,6 +26,19 @@ node serve.mjs   # http://localhost:8788
 
 Positionering kräver `https` eller `localhost`, så öppna via servern i stället
 för att dubbelklicka på `index.html`.
+
+## På mobilen
+
+Sidan är byggd mobilen först: träffytor på minst 44 px, säkra zoner för lurar
+med hack, och 16 px i sökfältet så att iOS inte zoomar in vid fokus. I
+48-timmarsdiagrammet visas värdena med ett tryck i stället för hovring, och
+uppdateringsknappen i topplisten hämtar färska siffror förbi cachen. Kommer du
+tillbaka till en flik som legat i bakgrunden mer än ett kvart hämtas nya
+prognoser automatiskt.
+
+Lägg till den på hemskärmen – **Dela → Lägg till på hemskärmen** i Safari,
+**⋮ → Lägg till på startskärmen** i Chrome – så startar den utan adressfält och
+med egen ikon.
 
 ## Källorna
 
