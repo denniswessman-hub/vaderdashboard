@@ -1,0 +1,14 @@
+{
+  "name": "vaderdashboard",
+  "version": "1.0.0",
+  "description": "Väderdashboard som väger samman SMHI, Yr och en tredje modell till en troligaste prognos",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "node dev-server.mjs",
+    "dev:mock": "MOCK=1 node dev-server.mjs",
+    "test:ui": "node test-ui.mjs"
+  },
+  "engines": { "node": ">=18" },
+  "devDependencies": { "playwright": "^1.49.0" }
+}
