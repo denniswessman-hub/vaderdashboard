@@ -63,6 +63,12 @@ function glyph(symbol, day = true) {
   const sun = day
     ? '<circle cx="25" cy="24" r="11" fill="#f2a516"/>'
     : '<path d="M32 14a12 12 0 1 0 8 20 14 14 0 0 1-8-20Z" fill="#c9c8be"/>';
+  // Fristående sol respektive måne, centrerad – används när himlen är klar.
+  const rays = [0, 45, 90, 135, 180, 225, 270, 315].map((a) =>
+    `<line x1="32" y1="32" x2="${(32 + Math.cos(a * Math.PI / 180) * 25).toFixed(1)}" y2="${(32 + Math.sin(a * Math.PI / 180) * 25).toFixed(1)}" stroke="#f2a516" stroke-width="3.5" stroke-linecap="round" opacity=".9"/>`).join('');
+  const soloSun = day
+    ? `<g>${rays}<circle cx="32" cy="32" r="19" fill="var(--surface-1)"/><circle cx="32" cy="32" r="13" fill="#f2a516"/></g>`
+    : '<path d="M36 12a17 17 0 1 0 15 26 19 19 0 0 1-15-26Z" fill="#c9c8be"/>';
   const cloud = (o = '') =>
     `<path ${o} d="M20 46a10 10 0 0 1 .6-19.9A14 14 0 0 1 47 30a8 8 0 0 1-1 16Z" fill="var(--text-secondary)" opacity=".85"/>`;
   const drops = (c) => [0, 1, 2].map((i) =>
@@ -71,7 +77,7 @@ function glyph(symbol, day = true) {
     `<g stroke="${c}" stroke-width="2" stroke-linecap="round"><path d="M${25 + i * 9} ${53 + (i % 2) * 3}v6M${22 + i * 9} ${55 + (i % 2) * 3}l6 3M${28 + i * 9} ${55 + (i % 2) * 3}l-6 3"/></g>`).join('');
 
   switch (symbol) {
-    case 'clear': return sun;
+    case 'clear': return soloSun;
     case 'fair': return sun + cloud('transform="translate(6 8) scale(.72)"');
     case 'partlycloudy': return sun + cloud();
     case 'cloudy': return cloud();
