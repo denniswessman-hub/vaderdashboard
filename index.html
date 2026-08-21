@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Väderdashboard – troligaste prognos</title>
+<meta name="description" content="SMHI, Yr och en tredje modell på samma sida, med en sammanvägd troligaste prognos.">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌤️</text></svg>">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="brand">Väderdashboard <span>· troligaste prognos</span></div>
+    <div class="search">
+      <input id="q" type="search" placeholder="Sök kommun eller ort…" autocomplete="off" aria-label="Sök plats">
+      <div class="results" id="results" role="listbox"></div>
+    </div>
+    <button class="btn" id="geo" title="Använd min position">Min position</button>
+    <button class="btn icon" id="theme" title="Växla ljust/mörkt" aria-label="Växla tema">◐</button>
+  </div>
+
+  <div class="favs" id="favs"></div>
+
+  <section class="card hero">
+    <div>
+      <div class="place" id="place">Hämtar…<small id="placeSub">&nbsp;</small></div>
+      <div class="now">
+        <svg class="glyph" id="nowGlyph" viewBox="0 0 64 64" aria-hidden="true"></svg>
+        <div class="temp" id="nowTemp">–</div>
+        <div class="desc" id="nowDesc">&nbsp;<small id="nowSub">&nbsp;</small></div>
+      </div>
+      <div class="metrics" id="nowMetrics"></div>
+    </div>
+
+    <div>
+      <h2>Källorna just nu</h2>
+      <p class="sub">Avvikelse mot den sammanvägda temperaturen.</p>
+      <div class="sources" id="sourceRows"></div>
+      <div class="agree">
+        <div class="bar"><i id="agreeBar" style="width:0%"></i></div>
+        <div class="lbl"><span id="agreeText">Enighet mellan källorna</span><span id="agreePct">–</span></div>
+      </div>
+      <p class="err" id="srcErrors"></p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Kommande 48 timmar</h2>
+    <p class="sub">Tunna linjer är källorna var för sig. Den tjocka linjen är den sammanvägda prognosen, det skuggade fältet visar spridningen mellan högsta och lägsta källa.</p>
+    <div class="legend" id="legend"></div>
+    <div class="chart-scroll" id="chartScroll">
+      <svg class="chart" id="chart48" viewBox="0 0 960 300" role="img" aria-label="Temperatur och nederbörd kommande 48 timmar"></svg>
+    </div>
+    <details class="tableview">
+      <summary>Visa som tabell</summary>
+      <div class="scroll"><table class="grid" id="hourTable"></table></div>
+    </details>
+  </section>
+
+  <section class="card">
+    <h2>10 dygn</h2>
+    <p class="sub">Sammanvägt per dygn. Klicka på en rad för att se vad varje källa säger.</p>
+    <div class="days" id="days"></div>
+  </section>
+
+  <footer>
+    <p id="meta">&nbsp;</p>
+    <p>Data: <a href="https://www.smhi.se/data/oppna-data" target="_blank" rel="noopener">SMHI öppna data</a> (CC BY 4.0) ·
+      <a href="https://api.met.no/" target="_blank" rel="noopener">MET Norway / Yr</a> (NLOD, CC BY 4.0) ·
+      <a href="https://open-meteo.com/" target="_blank" rel="noopener">ECMWF via Open-Meteo</a> (CC BY 4.0).
+      Prognoser är osäkra – sammanvägningen minskar men tar inte bort osäkerheten.</p>
+  </footer>
+</div>
+
+<div class="tooltip" id="tip" role="status"></div>
+<script src="sources.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

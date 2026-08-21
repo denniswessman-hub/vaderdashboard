@@ -1,78 +1,62 @@
 # Väderdashboard – troligaste prognos
 
-Samlar SMHI, Yr (MET Norway) och en tredje modell på en sida och räknar fram en
-sammanvägd **troligaste prognos** med lika vikt mellan källorna.
+Samlar SMHI, Yr (MET Norway) och ECMWF på en sida och räknar fram en sammanvägd
+**troligaste prognos** med lika vikt mellan källorna.
+
+Sidan är helt statisk: den hämtar alla tre källorna direkt från webbläsaren och
+behöver ingen server. Det gör att den kan ligga på GitHub Pages.
 
 ## Innehåll
 
 | Fil | Roll |
 |---|---|
-| `dist/index.html`, `dist/styles.css`, `dist/app.js` | Själva dashboarden |
-| `dist/_worker.js` | Serverdel: hämtar och normaliserar de tre källorna |
-| `dev-server.mjs` | Kör allt lokalt (Node 18+) |
-| `mock-data.mjs` | Syntetiska data för test utan nätverk |
-| `test-ui.mjs` | Renderingstest i headless Chromium |
-| `PUBLICERA.md` | Steg för steg: GitHub + Cloudflare Pages, utan kommandorad |
+| `index.html`, `styles.css` | Sidan och dess utseende |
+| `sources.js` | Hämtar och normaliserar SMHI, Yr och ECMWF |
+| `app.js` | Sammanvägning, diagram och rendering |
+| `serve.mjs` | Liten statisk server för lokal körning (Node 18+) |
+| `test-ui.mjs` | Renderingstest i headless Chromium mot stubbade API-svar |
+| `PUBLICERA.md` | Steg för steg: publicera på GitHub Pages |
 
 ## Köra lokalt
 
 ```bash
-node dev-server.mjs          # http://localhost:8788
-MOCK=1 node dev-server.mjs   # samma sida, syntetiska data
+node serve.mjs   # http://localhost:8788
 ```
 
-Positionering (GPS) kräver `https://` eller `localhost` – därför fungerar den via
-dev-servern men inte om du dubbelklickar på `index.html`.
-
-## Publicera på Cloudflare Pages
-
-1. Logga in på Cloudflare → **Workers & Pages** → **Create** → **Pages** → **Upload assets**.
-2. Ge projektet ett namn och ladda upp **innehållet i `dist/`** (alla fyra filer,
-   inklusive `_worker.js`).
-3. Deploy. Sidan ligger på `https://<projektnamn>.pages.dev`.
-
-`_worker.js` fångar `/api/*` och skickar övrigt vidare till de statiska filerna,
-så inga extra inställningar behövs. Vill du uppdatera senare laddar du bara upp
-en ny version av mappen.
-
-Netlify fungerar också, men då måste `_worker.js` skrivas om till en Netlify
-Function – Cloudflare är den raka vägen här.
+Positionering kräver `https` eller `localhost`, så öppna via servern i stället
+för att dubbelklicka på `index.html`.
 
 ## Källorna
 
 | Källa | API | Villkor |
 |---|---|---|
 | SMHI | `opendata-download-metfcst.smhi.se` – **SNOW1g v1** | Fri, CC BY 4.0. Ersatte PMP3g v2 den 31 mars 2026. |
-| Yr | `api.met.no/weatherapi/locationforecast/2.0` | Fri, NLOD/CC BY 4.0. Kräver identifierande `User-Agent`. Den sätts automatiskt till sidans egen adress, t.ex. `vaderdashboard/1.0 (+https://vaderdashboard.pages.dev)`. |
-| Klart | Inget publikt API | Adaptern provar kända mönster; misslyckas den används ECMWF (Open-Meteo) i stället, tydligt märkt i gränssnittet. |
+| Yr | `api.met.no/weatherapi/locationforecast/2.0` | Fri, NLOD/CC BY 4.0. |
+| ECMWF | `api.open-meteo.com` – modell `ecmwf_ifs025` | Fri för icke-kommersiellt bruk, CC BY 4.0. |
 
-Ingen mejladress ligger i koden. `_worker.js` läser av vilken adress sidan
-serveras från och identifierar sig med den mot MET Norway, precis som deras
-villkor tillåter. `FALLBACK_SITE` överst i filen används bara vid lokal körning,
-där det inte finns någon publik adress att peka på.
+Platssökning sker mot Open-Meteos geokodning, omvänd geokodning mot
+BigDataCloud. Alla svar cachas 15 minuter per plats i webbläsaren så att
+källorna inte belastas i onödan.
 
-### Att koppla in Klart på riktigt
+### Om Klart.se
 
-När sidan är publicerad, öppna:
-
-```
-https://<projektnamn>.pages.dev/api/klart-debug?q=Stockholm
-```
-
-Den provar fem tänkbara adresser hos Klart och visar status och de första
-raderna av varje svar. Skicka utfallet till mig så skriver jag klart adaptern.
-Alternativt: öppna klart.se i Chrome, fliken Nätverk, filtrera på `Fetch/XHR`
-och kopiera adressen till anropet som innehåller prognosdata.
+Klart.se har inget publikt API och tillåter inte anrop från andra webbplatser,
+så deras data går inte att hämta från en statisk sida. ECMWF fyller den tredje
+platsen i stället – en oberoende modell, vilket är själva poängen med
+sammanvägningen. Vill du ha med Klart krävs en serverdel som hämtar åt sidan,
+till exempel en Cloudflare Worker.
 
 ## Så räknas "troligaste prognos" fram
 
 Alla källor interpoleras till ett gemensamt timrutnät. Per timme gäller:
 
-- **Temperatur, vind, luftfuktighet, molnighet** – medelvärde. Spridningen mellan
-  högsta och lägsta källa ritas som ett band i diagrammet.
-- **Vindriktning** – cirkulärt medelvärde (så att 350° och 10° blir 0°, inte 180°).
-- **Nederbörd** – medelvärde av intensiteten, plus andelen källor som tror på
-  nederbörd alls ("regnrisk").
+- **Temperatur, vind, luftfuktighet, molnighet** – medelvärde. Spridningen
+  mellan högsta och lägsta källa ritas som ett band i diagrammet.
+- **Vindriktning** – cirkulärt medelvärde, så att 350° och 10° blir 0° och
+  inte 180°.
+- **Nederbörd** – medelvärde av intensiteten. Regnrisken är medelvärdet av
+  källornas egna sannolikheter, och faller tillbaka på hur många av dem som
+  tror på nederbörd alls om sannolikheter saknas.
 - **Vädersymbol** – majoritetsval. Är alla tre oense väljs medianen på en
   allvarlighetsskala, alltså mellanalternativet snarare än ytterligheterna.
 - **Enighet** – 40 % symbolsamstämmighet, 35 % temperaturspridning, 25 %
@@ -81,10 +65,12 @@ Alla källor interpoleras till ett gemensamt timrutnät. Per timme gäller:
 Dygnsvärdena i 10-dygnslistan aggregeras per källa först och vägs samman sedan,
 så att en källa som slutar tidigare inte drar med sig hela dygnet.
 
-## Kända begränsningar
+## Detaljer som är lätta att missa
 
-- Klart.se är inte verifierad (se ovan).
-- Prognoser glesnar bortom cirka tre dygn; timupplösningen i diagrammet är
-  interpolerad efter det.
-- SMHI täcker bara Norden – utanför SMHI:s område faller sammanvägningen tillbaka
-  på övriga källor.
+- SMHI och Open-Meteo anger nederbörd för tiden **före** varje tidsstämpel,
+  Yr för tiden **efter**. `sources.js` flyttar de två förstnämnda ett steg så
+  att alla tre pekar framåt.
+- SMHI anger molnighet i oktas (0–8), inte procent.
+- Prognoserna glesnar med tiden: SMHI går från en till tre timmar efter ett
+  dygn, Yr till sex timmar efter två. Varje punkt bär därför hur många timmar
+  den täcker, annars blir dygnssummorna för nederbörd fel.
