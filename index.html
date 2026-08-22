@@ -67,14 +67,26 @@
     </div>
   </section>
 
-  <section class="card">
-    <h2>Kommande 48 timmar</h2>
-    <p class="sub">Tunna linjer är källorna var för sig. Den tjocka linjen är den sammanvägda prognosen, det skuggade fältet visar spridningen mellan högsta och lägsta källa.</p>
-    <div class="legend" id="legend"></div>
-    <p class="swipe-hint">Svep i sidled för att se hela dygnet</p>
-    <div class="chart-scroll" id="chartScroll">
-      <svg class="chart" id="chart48" viewBox="0 0 960 300" role="img" aria-label="Temperatur och nederbörd kommande 48 timmar"></svg>
+  <section class="card chartcard">
+    <div class="card-head">
+      <div>
+        <h2>Kommande <span id="rangeLabel">48</span> timmar</h2>
+        <p class="sub">Dra fingret längs diagrammet för att läsa av en enskild timme.</p>
+      </div>
+      <div class="seg" role="group" aria-label="Tidsspann">
+        <button type="button" data-range="24">24 h</button>
+        <button type="button" data-range="48">48 h</button>
+      </div>
     </div>
+
+    <div class="readout" id="readout" aria-live="polite"></div>
+
+    <div class="chart-wrap">
+      <svg class="chart" id="chart48" role="img" aria-label="Temperatur och nederbörd timme för timme"></svg>
+    </div>
+
+    <div class="legend" id="legend"></div>
+
     <details class="tableview">
       <summary>Visa som tabell</summary>
       <div class="scroll"><table class="grid" id="hourTable"></table></div>
@@ -96,7 +108,6 @@
   </footer>
 </div>
 
-<div class="tooltip" id="tip" role="status"></div>
 <script src="sources.js"></script>
 <script src="app.js"></script>
 </body>

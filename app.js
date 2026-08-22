@@ -19,7 +19,11 @@ const SYMBOL_TEXT = {
   sleet: 'Snöblandat regn', snow: 'Snö', heavysnow: 'Kraftigt snöfall', thunder: 'Åska',
 };
 
-const state = { loc: null, favs: [], data: null, grid: null, days: null, fetched: 0 };
+const state = {
+  loc: null, favs: [], data: null, grid: null, days: null, fetched: 0,
+  range: window.matchMedia('(max-width: 560px)').matches ? 24 : 48,
+  cursor: 0,
+};
 
 /* ------------------------------------------------------------------ *
  * Lagring
@@ -287,6 +291,7 @@ const fmtNum = (v, d = 1) => (typeof v === 'number' ? v.toFixed(d).replace('.', 
 const timeFmt = new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
 const dayFmt = new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, weekday: 'short' });
 const dateFmt = new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, day: 'numeric', month: 'short' });
+const dayLongFmt = new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, weekday: 'long' });
 const compass = (d) => ['N', 'NO', 'O', 'SO', 'S', 'SV', 'V', 'NV'][Math.round(((d % 360) + 360) % 360 / 45) % 8];
 
 function activeSources() {
@@ -341,172 +346,268 @@ function renderSources() {
   $('srcErrors').textContent = errs.length ? errs.map(([k, v]) => `${(SOURCE_META[k] || { label: k }).label}: ${v}`).join(' · ') : '';
 
 
-  $('legend').innerHTML = activeSources().map((s) =>
-    `<b><i style="background:${sourceColor(s.id)}"></i>${sourceLabel(s)}</b>`).join('') +
+  $('legend').innerHTML =
     '<b><i class="thick" style="background:var(--text-primary)"></i>Troligaste prognos</b>' +
-    '<b><i class="band" style="background:var(--text-primary)"></i>Spridning mellan källor</b>';
+    activeSources().map((s) => `<b><i style="background:${sourceColor(s.id)}"></i>${sourceLabel(s)}</b>`).join('') +
+    '<b><i class="band" style="background:var(--text-primary)"></i>Spridning</b>';
+}
+/* ---------- Diagram över kommande dygn ---------- */
+
+/* Diagrammet ritas i riktiga skärmpixlar och fyller kortets bredd, så att
+ * inget behöver skrollas i sidled. Värden läses av genom att dra fingret
+ * längs ytan; svaret hamnar i rutan ovanför i stället för under fingret. */
+
+const CHART = { padL: 34, padR: 12, top: 20, precipH: 34, axisH: 22, gap: 14 };
+
+let chartCache = null;
+
+function chartGeometry() {
+  const wrap = document.querySelector('.chart-wrap');
+  const w = Math.max(wrap ? wrap.clientWidth : 320, 260);
+  const h = w < 520 ? 250 : 300;
+  const { padL, padR, top, precipH, axisH, gap } = CHART;
+  const axisY = h - axisH;
+  const precipBottom = axisY - 6;
+  const precipTop = precipBottom - precipH;
+  const tempBottom = precipTop - gap;
+  return { w, h, padL, padR, top, tempBottom, precipTop, precipBottom, axisY, plotW: w - padL - padR };
 }
 
-/* ---------- 48-timmarsdiagram ---------- */
-
-const CHART = { w: 960, h: 300, l: 42, r: 14, tTop: 16, tBot: 190, pTop: 208, pBot: 274 };
-
 function renderChart() {
-  const rows = state.grid.slice(0, 49);
+  const hours = state.range;
+  const rows = state.grid.slice(0, hours + 1);
   const svg = $('chart48');
-  const { w, l, r, tTop, tBot, pTop, pBot } = CHART;
-  const plotW = w - l - r;
-  const x = (i) => l + (plotW * i) / (rows.length - 1);
+  const g = chartGeometry();
+  const x = (i) => g.padL + (g.plotW * i) / (rows.length - 1);
 
   const temps = rows.flatMap((row) => [row.c.tempMin, row.c.tempMax,
     ...Object.values(row.per).map((v) => v && v.temp)]).filter((v) => typeof v === 'number');
   let lo = Math.min(...temps), hi = Math.max(...temps);
   if (hi - lo < 4) { const mid = (hi + lo) / 2; lo = mid - 2; hi = mid + 2; }
-  const pad = (hi - lo) * 0.12;
+  const pad = (hi - lo) * 0.14;
   lo -= pad; hi += pad;
-  const y = (v) => tBot - ((v - lo) / (hi - lo)) * (tBot - tTop);
+  const y = (v) => g.tempBottom - ((v - lo) / (hi - lo)) * (g.tempBottom - g.top);
 
-  const maxRate = Math.max(0.6, ...rows.map((row) => row.c.rate || 0));
-  const yp = (v) => pBot - (Math.min(v, maxRate) / maxRate) * (pBot - pTop);
+  const maxRate = Math.max(0.5, ...rows.map((row) => row.c.rate || 0));
+  const yp = (v) => g.precipBottom - (Math.min(v, maxRate) / maxRate) * (g.precipBottom - g.precipTop);
 
-  const parts = [];
+  const parts = [`<defs>
+    <linearGradient id="fadeTop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="var(--text-primary)" stop-opacity=".13"/>
+      <stop offset="1" stop-color="var(--text-primary)" stop-opacity=".02"/>
+    </linearGradient>
+  </defs>`];
 
-  // Nattskuggning
+  // Natt som ett svagt fält bakom allt annat
   let runStart = null;
   rows.forEach((row, i) => {
     const night = !isDay(row.date);
     if (night && runStart === null) runStart = i;
     if ((!night || i === rows.length - 1) && runStart !== null) {
-      parts.push(`<rect class="night" x="${x(runStart).toFixed(1)}" y="${tTop}" width="${(x(i) - x(runStart)).toFixed(1)}" height="${tBot - tTop}"/>`);
+      parts.push(`<rect class="night" x="${x(runStart).toFixed(1)}" y="${g.top - 8}" width="${Math.max(x(i) - x(runStart), 1).toFixed(1)}" height="${(g.precipBottom - g.top + 8).toFixed(1)}"/>`);
       runStart = null;
     }
   });
 
-  // Rutnät och temperaturaxel
-  const ticks = niceTicks(lo, hi, 4);
-  for (const t of ticks) {
-    parts.push(`<line class="grid" x1="${l}" x2="${w - r}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}"/>`);
-    parts.push(`<text x="${l - 8}" y="${(y(t) + 4).toFixed(1)}" text-anchor="end">${Math.round(t)}°</text>`);
+  // Vågräta stödlinjer med gradtal
+  for (const t of niceTicks(lo, hi, g.h < 280 ? 3 : 4)) {
+    const yy = y(t).toFixed(1);
+    parts.push(`<line class="grid" x1="${g.padL}" x2="${g.w - g.padR}" y1="${yy}" y2="${yy}"/>`);
+    parts.push(`<text class="ylab" x="${g.padL - 7}" y="${(y(t) + 4).toFixed(1)}" text-anchor="end">${Math.round(t)}°</text>`);
   }
 
-  // Spridningsband
-  const bandTop = rows.map((row, i) => `${x(i).toFixed(1)},${y(row.c.tempMax).toFixed(1)}`).join(' ');
-  const bandBot = rows.slice().reverse().map((row, i) =>
-    `${x(rows.length - 1 - i).toFixed(1)},${y(row.c.tempMin).toFixed(1)}`).join(' ');
-  parts.push(`<polygon class="band" points="${bandTop} ${bandBot}"/>`);
+  // Dygnsgränser med veckodag
+  rows.forEach((row, i) => {
+    if (Number(hourInTz(row.date)) !== 0 || i === 0) return;
+    parts.push(`<line class="daysep" x1="${x(i).toFixed(1)}" x2="${x(i).toFixed(1)}" y1="${g.top - 8}" y2="${g.precipBottom}"/>`);
+    parts.push(`<text class="dlab" x="${(x(i) + 5).toFixed(1)}" y="${g.top - 1}">${dayFmt.format(row.date)}</text>`);
+  });
 
-  // Källinjer
+  // Spridningen mellan högsta och lägsta källa
+  const band = rows.map((row, i) => `${x(i).toFixed(1)},${y(row.c.tempMax).toFixed(1)}`)
+    .concat(rows.slice().reverse().map((row, i) => `${x(rows.length - 1 - i).toFixed(1)},${y(row.c.tempMin).toFixed(1)}`));
+  parts.push(`<polygon class="band" points="${band.join(' ')}"/>`);
+
+  // Ytan under den sammanvägda linjen ger kurvan tyngd
+  const cpts = rows.map((row, i) => `${x(i).toFixed(1)},${y(row.c.temp).toFixed(1)}`);
+  parts.push(`<polygon class="area" points="${x(0).toFixed(1)},${g.tempBottom} ${cpts.join(' ')} ${x(rows.length - 1).toFixed(1)},${g.tempBottom}"/>`);
+
   for (const s of activeSources()) {
     const pts = rows.map((row, i) => {
       const v = row.per[s.id];
       return v && typeof v.temp === 'number' ? `${x(i).toFixed(1)},${y(v.temp).toFixed(1)}` : null;
-    }).filter(Boolean).join(' ');
-    if (pts) parts.push(`<polyline class="line" points="${pts}" stroke="${sourceColor(s.id)}" opacity=".75"/>`);
+    }).filter(Boolean);
+    if (pts.length) parts.push(`<polyline class="line src" points="${pts.join(' ')}" stroke="${sourceColor(s.id)}"/>`);
   }
+  parts.push(`<polyline class="line consensus" points="${cpts.join(' ')}"/>`);
 
-  // Sammanvägd linje
-  const cpts = rows.map((row, i) => `${x(i).toFixed(1)},${y(row.c.temp).toFixed(1)}`).join(' ');
-  parts.push(`<polyline class="line consensus" points="${cpts}"/>`);
-
-  // Nederbörd
-  parts.push(`<line class="axis" x1="${l}" x2="${w - r}" y1="${pBot}" y2="${pBot}"/>`);
-  parts.push(`<text x="${l - 8}" y="${pTop + 10}" text-anchor="end">${fmtNum(maxRate, 1)}</text>`);
-  parts.push(`<text x="${l - 8}" y="${pBot}" text-anchor="end">mm/h</text>`);
-  const bw = Math.max(3, plotW / rows.length - 3);
+  // Nederbörd i egen bana
+  parts.push(`<line class="axis" x1="${g.padL}" x2="${g.w - g.padR}" y1="${g.precipBottom}" y2="${g.precipBottom}"/>`);
+  parts.push(`<text class="ylab" x="${g.padL - 7}" y="${(g.precipTop + 9).toFixed(1)}" text-anchor="end">${fmtNum(maxRate, 1)}</text>`);
+  const bw = Math.max(2.5, g.plotW / rows.length - 2.5);
   rows.forEach((row, i) => {
     const v = row.c.rate || 0;
     if (v <= 0.02) return;
-    const h = Math.max(2, pBot - yp(v));
-    parts.push(`<rect class="bar" x="${(x(i) - bw / 2).toFixed(1)}" y="${(pBot - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2" opacity="${(0.45 + 0.55 * (row.c.pop === null ? row.c.wetShare : row.c.pop / 100)).toFixed(2)}"/>`);
+    const barH = Math.max(2, g.precipBottom - yp(v));
+    const risk = row.c.pop === null ? row.c.wetShare : row.c.pop / 100;
+    parts.push(`<rect class="bar" x="${(x(i) - bw / 2).toFixed(1)}" y="${(g.precipBottom - barH).toFixed(1)}" width="${bw.toFixed(1)}" height="${barH.toFixed(1)}" rx="${Math.min(2, bw / 2).toFixed(1)}" opacity="${(0.4 + 0.6 * risk).toFixed(2)}"/>`);
   });
+  parts.push(`<text class="unit" x="${g.padL - 7}" y="${(g.precipBottom + 4).toFixed(1)}" text-anchor="end">mm/h</text>`);
 
-  // Tidsaxel
+  // Tidsaxel – tätare etiketter bara när det finns plats
+  const step = g.plotW / rows.length > 9 ? 6 : 12;
   rows.forEach((row, i) => {
-    const hour = Number(new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, hour: '2-digit', hour12: false }).format(row.date));
-    if (hour % 6 !== 0) return;
-    parts.push(`<line class="grid" x1="${x(i).toFixed(1)}" x2="${x(i).toFixed(1)}" y1="${tTop}" y2="${tBot}" opacity=".6"/>`);
-    parts.push(`<text x="${x(i).toFixed(1)}" y="${CHART.h - 6}" text-anchor="middle">${hour === 0 ? dayFmt.format(row.date) : `${String(hour).padStart(2, '0')}`}</text>`);
+    const hour = Number(hourInTz(row.date));
+    if (hour % step !== 0) return;
+    parts.push(`<text class="xlab" x="${x(i).toFixed(1)}" y="${(g.axisY + 15).toFixed(1)}" text-anchor="middle">${String(hour).padStart(2, '0')}</text>`);
   });
 
-  parts.push(`<g id="cross" style="display:none"><line class="hover-line" y1="${tTop}" y2="${pBot}"/><circle class="hover-dot" r="4"/></g>`);
+  // Markör för nuläget
+  parts.push(`<line class="nowline" x1="${x(0).toFixed(1)}" x2="${x(0).toFixed(1)}" y1="${g.top - 8}" y2="${g.precipBottom}"/>`);
+
+  parts.push(`<g class="cursor" style="display:none">
+    <line y1="${g.top - 8}" y2="${g.precipBottom}"/>
+    <circle class="halo" r="9"/><circle class="dot" r="4"/>
+  </g>`);
+
+  svg.setAttribute('viewBox', `0 0 ${g.w} ${g.h}`);
+  svg.setAttribute('height', g.h);
   svg.innerHTML = parts.join('');
-  attachHover(svg, rows, x, y);
-  renderHourTable(rows);
+
+  chartCache = { rows, x, y, g };
+  attachScrub(svg);
+  setCursor(state.cursor ?? 0);
+  renderHourTable(state.grid.slice(0, hours + 1));
 }
 
+const hourInTz = (date) =>
+  new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, hour: '2-digit', hour12: false }).format(date);
+
+// Väljer det steg som ger ungefär önskat antal linjer, men aldrig färre än tre
+// – annars blir gradskalan obegriplig när dygnet är jämnt.
 function niceTicks(lo, hi, count) {
   const span = hi - lo;
-  const raw = span / count;
-  const mag = 10 ** Math.floor(Math.log10(raw));
-  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) || mag * 10;
-  const out = [];
-  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) out.push(v);
-  return out;
+  const mag = 10 ** Math.floor(Math.log10(Math.max(span / count, 1e-6)));
+  const steps = [1, 2, 2.5, 5, 10].map((m) => m * mag);
+  const ticksFor = (step) => {
+    const out = [];
+    for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(v);
+    return out;
+  };
+  let best = null;
+  for (const step of steps) {
+    const t = ticksFor(step);
+    if (t.length < 3) continue;
+    if (!best || Math.abs(t.length - count) < Math.abs(best.length - count)) best = t;
+  }
+  return best || ticksFor(steps[0]);
 }
 
-function attachHover(svg, rows, x, y) {
-  const tip = $('tip');
-  const cross = svg.querySelector('#cross');
-  const line = cross.querySelector('line');
-  const dot = cross.querySelector('circle');
-  let hideTimer;
+/* ---------- Avläsning ---------- */
 
-  const hide = () => { tip.classList.remove('on'); cross.style.display = 'none'; };
+function setCursor(idx) {
+  if (!chartCache) return;
+  const { rows, x, y } = chartCache;
+  const i = Math.min(Math.max(Math.round(idx), 0), rows.length - 1);
+  state.cursor = i;
+  const row = rows[i];
 
-  const move = (ev) => {
-    clearTimeout(hideTimer);
+  const cursor = $('chart48').querySelector('.cursor');
+  cursor.style.display = '';
+  cursor.querySelectorAll('line, circle').forEach((el) => {
+    if (el.tagName === 'line') { el.setAttribute('x1', x(i)); el.setAttribute('x2', x(i)); }
+    else { el.setAttribute('cx', x(i)); el.setAttribute('cy', y(row.c.temp)); }
+  });
+
+  const c = row.c;
+  const srcs = activeSources().map((s) => {
+    const v = row.per[s.id];
+    return `<span class="ro-src"><i style="background:${sourceColor(s.id)}"></i>${sourceLabel(s)} <b>${v ? fmtTemp(v.temp) : '–'}</b></span>`;
+  }).join('');
+
+  $('readout').innerHTML = `
+    <div class="ro-head">
+      <span class="ro-time">${dayFmt.format(row.date)} ${timeFmt.format(row.date)}</span>
+      ${i === 0 ? '<span class="ro-badge">nu</span>' : '<button type="button" class="ro-now">Till nu</button>'}
+    </div>
+    <div class="ro-body">
+      <svg viewBox="0 0 64 64" class="ro-glyph" aria-hidden="true">${glyph(c.symbol, isDay(row.date))}</svg>
+      <span class="ro-temp">${fmtTemp(c.temp)}</span>
+      <span class="ro-desc">${SYMBOL_TEXT[c.symbol] || ''}<small>${fmtNum(c.rate, 1)} mm/h · ${c.pop === null ? '–' : Math.round(c.pop)} % regnrisk · ${fmtNum(c.wind, 1)} m/s</small></span>
+      <span class="ro-agree" title="Hur eniga källorna är">${Math.round(c.agreement * 100)} %<small>enighet</small></span>
+    </div>
+    <div class="ro-srcs">${srcs}</div>`;
+
+  const back = $('readout').querySelector('.ro-now');
+  if (back) back.addEventListener('click', () => setCursor(0));
+}
+
+function attachScrub(svg) {
+  const at = (ev) => {
+    const { rows, g } = chartCache;
     const box = svg.getBoundingClientRect();
-    const px = ((ev.clientX - box.left) / box.width) * CHART.w;
-    let idx = Math.round(((px - CHART.l) / (CHART.w - CHART.l - CHART.r)) * (rows.length - 1));
-    idx = Math.min(Math.max(idx, 0), rows.length - 1);
-    const row = rows[idx];
-    cross.style.display = '';
-    line.setAttribute('x1', x(idx));
-    line.setAttribute('x2', x(idx));
-    dot.setAttribute('cx', x(idx));
-    dot.setAttribute('cy', y(row.c.temp));
-
-    const srcRows = activeSources().map((s) => {
-      const v = row.per[s.id];
-      return `<dt><i style="background:${sourceColor(s.id)}"></i>${sourceLabel(s)}</dt><dd>${v ? fmtTemp(v.temp) : '–'}</dd>`;
-    }).join('');
-    tip.innerHTML = `<h4>${dayFmt.format(row.date)} ${timeFmt.format(row.date)}</h4>
-      <dl>
-        <dt><i style="background:var(--text-primary)"></i>Troligaste</dt><dd>${fmtTemp(row.c.temp)}</dd>
-        ${srcRows}
-        <dt>Nederbörd</dt><dd>${fmtNum(row.c.rate, 1)} mm/h</dd>
-        <dt>Regnrisk</dt><dd>${row.c.pop === null ? '–' : Math.round(row.c.pop) + ' %'}</dd>
-        <dt>Vind</dt><dd>${fmtNum(row.c.wind, 1)} m/s</dd>
-        <dt>Enighet</dt><dd>${Math.round(row.c.agreement * 100)} %</dd>
-      </dl>`;
-    tip.classList.add('on');
-    const tw = tip.offsetWidth;
-    const th = tip.offsetHeight;
-    const touch = ev.pointerType && ev.pointerType !== 'mouse';
-    // Vid pekskärm hamnar rutan ovanför fingret så att den inte skyms.
-    const top = touch ? ev.clientY - th - 22 : ev.clientY - 10;
-    tip.style.left = `${Math.min(Math.max(ev.clientX - (touch ? tw / 2 : -14), 8), window.innerWidth - tw - 8) + window.scrollX}px`;
-    tip.style.top = `${Math.max(top, 8) + window.scrollY}px`;
-    if (touch) hideTimer = setTimeout(hide, 4000);
+    const px = ((ev.clientX - box.left) / box.width) * g.w;
+    setCursor(((px - g.padL) / g.plotW) * (rows.length - 1));
   };
 
-  svg.addEventListener('pointermove', (ev) => { if (ev.pointerType === 'mouse') move(ev); });
-  svg.addEventListener('pointerdown', move);
-  svg.addEventListener('pointerleave', (ev) => { if (ev.pointerType === 'mouse') hide(); });
-  svg.addEventListener('pointercancel', hide);
+  let dragging = false;
+  svg.addEventListener('pointerdown', (ev) => {
+    dragging = true;
+    svg.setPointerCapture(ev.pointerId);
+    svg.classList.add('scrubbing');
+    at(ev);
+  });
+  svg.addEventListener('pointermove', (ev) => {
+    if (dragging || ev.pointerType === 'mouse') at(ev);
+  });
+  const stop = (ev) => {
+    dragging = false;
+    svg.classList.remove('scrubbing');
+    if (svg.hasPointerCapture?.(ev.pointerId)) svg.releasePointerCapture(ev.pointerId);
+  };
+  svg.addEventListener('pointerup', stop);
+  svg.addEventListener('pointercancel', stop);
+  svg.addEventListener('pointerleave', (ev) => { if (ev.pointerType === 'mouse' && !dragging) setCursor(0); });
+
+  // Piltangenter för den som hellre använder tangentbord
+  svg.tabIndex = 0;
+  svg.addEventListener('keydown', (ev) => {
+    const steps = { ArrowLeft: -1, ArrowRight: 1, PageDown: -6, PageUp: 6, Home: -999, End: 999 };
+    if (!(ev.key in steps)) return;
+    ev.preventDefault();
+    setCursor(ev.key === 'Home' ? 0 : ev.key === 'End' ? chartCache.rows.length - 1 : state.cursor + steps[ev.key]);
+  });
 }
+
+/* ---------- Timtabell ---------- */
 
 function renderHourTable(rows) {
   const srcs = activeSources();
-  const head = `<thead><tr><th>Tid</th><th>Troligaste</th>${srcs.map((s) => `<th>${sourceLabel(s)}</th>`).join('')}<th>mm/h</th><th>Vind</th><th>Enighet</th></tr></thead>`;
-  const body = rows.map((row) => `<tr>
-    <td>${dayFmt.format(row.date)} ${timeFmt.format(row.date)}</td>
-    <td>${fmtTemp(row.c.temp)}</td>
-    ${srcs.map((s) => `<td>${row.per[s.id] ? fmtTemp(row.per[s.id].temp) : '–'}</td>`).join('')}
-    <td>${fmtNum(row.c.rate, 1)}</td>
-    <td>${fmtNum(row.c.wind, 1)}</td>
-    <td>${Math.round(row.c.agreement * 100)} %</td>
-  </tr>`).join('');
+  const head = `<thead><tr>
+      <th class="col-time">Tid</th>
+      <th class="col-main">Troligaste</th>
+      ${srcs.map((s) => `<th><span class="th-dot" style="background:${sourceColor(s.id)}"></span>${sourceLabel(s)}</th>`).join('')}
+      <th>mm/h</th><th>Regnrisk</th><th>Vind</th><th class="col-agree">Enighet</th>
+    </tr></thead>`;
+
+  let day = null;
+  const body = rows.map((row) => {
+    const key = dateFmt.format(row.date);
+    const sep = key === day ? '' :
+      `<tr class="daysep"><td colspan="${srcs.length + 6}"><span class="wd">${dayLongFmt.format(row.date)}</span> ${key}</td></tr>`;
+    day = key;
+    const pct = Math.round(row.c.agreement * 100);
+    return `${sep}<tr>
+      <td class="col-time">${timeFmt.format(row.date)}</td>
+      <td class="col-main">${fmtTemp(row.c.temp)}</td>
+      ${srcs.map((s) => `<td>${row.per[s.id] ? fmtTemp(row.per[s.id].temp) : '–'}</td>`).join('')}
+      <td>${fmtNum(row.c.rate, 1)}</td>
+      <td>${row.c.pop === null ? '–' : Math.round(row.c.pop) + ' %'}</td>
+      <td>${fmtNum(row.c.wind, 1)}</td>
+      <td class="col-agree"><span class="mini"><i style="width:${pct}%;background:${pct >= 75 ? 'var(--good)' : pct >= 50 ? 'var(--warning)' : 'var(--serious)'}"></i></span>${pct} %</td>
+    </tr>`;
+  }).join('');
+
   $('hourTable').innerHTML = head + `<tbody>${body}</tbody>`;
 }
 
@@ -585,6 +686,7 @@ async function refresh({ force = false } = {}) {
     state.data = data;
     state.fetched = Date.now();
     state.grid = buildGrid(data);
+    state.cursor = 0;
     state.days = buildDays(state.grid, data);
     renderSources();
     renderNow();
@@ -687,11 +789,27 @@ async function boot() {
   $('geo').addEventListener('click', useGeolocation);
   $('refresh').addEventListener('click', () => { if (state.loc) refresh({ force: true }); });
 
-  let resizeTimer;
-  window.addEventListener('resize', () => {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => { if (state.grid) renderChart(); }, 150);
+  document.querySelector('.seg').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-range]');
+    if (!b) return;
+    state.range = Number(b.dataset.range);
+    state.cursor = 0;
+    document.querySelectorAll('.seg button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    $('rangeLabel').textContent = state.range;
+    if (state.grid) renderChart();
   });
+  document.querySelectorAll('.seg button').forEach((b) =>
+    b.setAttribute('aria-pressed', String(Number(b.dataset.range) === state.range)));
+  $('rangeLabel').textContent = state.range;
+
+  // Diagrammet ritas om när kortet byter bredd (rotation, delad skärm)
+  let resizeTimer;
+  const redraw = () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (state.grid) renderChart(); }, 120);
+  };
+  window.addEventListener('resize', redraw);
+  if (window.ResizeObserver) new ResizeObserver(redraw).observe(document.querySelector('.chart-wrap'));
 
   // Skugga under topplisten så fort sidan rullas
   const bar = document.querySelector('.topbar');

@@ -110,6 +110,23 @@ await page.click('#results button');
 await page.waitForTimeout(900);
 console.log('efter sökning:', await page.evaluate(() => document.getElementById('place').textContent));
 
+await page.click('details.tableview > summary');
+await page.waitForTimeout(400);
+console.log('tabell:', JSON.stringify(await page.evaluate(() => {
+  const th = document.querySelector('#hourTable th');
+  const td = document.querySelector('#hourTable td.col-time');
+  const box = document.querySelector('details.tableview .scroll');
+  box.scrollTop = 240; box.scrollLeft = 120;
+  return {
+    thPosition: getComputedStyle(th).position,
+    tdPosition: getComputedStyle(td).position,
+    rader: document.querySelectorAll('#hourTable tbody tr').length,
+    dagsrader: document.querySelectorAll('#hourTable tr.daysep').length,
+    // rubriken ska ligga kvar högst upp i rutan trots att innehållet rullats
+    rubrikKvar: Math.round(th.getBoundingClientRect().top - box.getBoundingClientRect().top),
+  };
+})));
+await page.waitForTimeout(300);
 await page.screenshot({ path: 'shot-light.png', fullPage: true });
 await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
 await page.waitForTimeout(250);
@@ -151,6 +168,18 @@ for (const [name, w, h, dpr] of devices) {
     };
   });
   console.log(name, JSON.stringify(info));
+  if (name === 'iphone-15') {
+    // Dra fingret längs diagrammet och se att avläsningen följer med
+    await mp.locator('#chart48').scrollIntoViewIfNeeded();
+    await mp.waitForTimeout(200);
+    const box = await mp.locator('#chart48').boundingBox();
+    await mp.touchscreen.tap(box.x + box.width * 0.7, box.y + box.height * 0.4);
+    await mp.waitForTimeout(300);
+    console.log('efter tryck pa 70%:', await mp.evaluate(() => document.querySelector('.ro-time').textContent));
+    await mp.evaluate(() => window.scrollTo(0, 0));
+    await mp.click('details.tableview > summary');
+    await mp.waitForTimeout(300);
+  }
   await mp.screenshot({ path: `shot-${name}.png`, fullPage: true });
   await d.close();
 }

@@ -13,10 +13,10 @@ behöver ingen server. Det gör att den kan ligga på GitHub Pages.
 | `index.html`, `styles.css` | Sidan och dess utseende |
 | `sources.js` | Hämtar och normaliserar SMHI, Yr och ECMWF |
 | `app.js` | Sammanvägning, diagram och rendering |
+| `PUBLICERA.md` | Steg för steg: publicera på GitHub Pages |
 | `manifest.json`, `icon-*.png` | Gör att sidan kan läggas till på hemskärmen som en app |
 | `serve.mjs` | Liten statisk server för lokal körning (Node 18+) |
-| `test-ui.mjs` | Renderingstest i headless Chromium mot stubbade API-svar |
-| `PUBLICERA.md` | Steg för steg: publicera på GitHub Pages |
+| `test-ui.mjs` | Renderingstest i headless Chromium mot stubbade API-svar, inklusive fyra telefonformat |
 
 ## Köra lokalt
 
@@ -31,8 +31,9 @@ för att dubbelklicka på `index.html`.
 
 Sidan är byggd mobilen först: träffytor på minst 44 px, säkra zoner för lurar
 med hack, och 16 px i sökfältet så att iOS inte zoomar in vid fokus. I
-48-timmarsdiagrammet visas värdena med ett tryck i stället för hovring, och
-uppdateringsknappen i topplisten hämtar färska siffror förbi cachen. Kommer du
+diagrammet fyller kortets bredd och läses av genom att dra fingret längs ytan –
+svaret hamnar i rutan ovanför, inte under fingret. Lodrätt svep rullar sidan som
+vanligt. Uppdateringsknappen i topplisten hämtar färska siffror förbi cachen. Kommer du
 tillbaka till en flik som legat i bakgrunden mer än ett kvart hämtas nya
 prognoser automatiskt.
 
